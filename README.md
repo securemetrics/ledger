@@ -114,7 +114,7 @@ interrupted run never corrupts a previous snapshot. Regional endpoint? Set `LEDG
 
 ```powershell
 ledger setup       # once, as the account the schedule will run as
-ledger schedule    # list your schedules, add or remove one
+ledger schedule    # list your schedules, add or remove one (Windows; see Linux and macOS below)
 ```
 
 `ledger schedule` shows what's scheduled, then asks what to do:
@@ -169,21 +169,22 @@ Choose whether it runs while you're signed out:
 
 ### Linux and macOS
 
-Schedules are lines in your crontab. Ledger only changes its own lines (they end in `# ledger:snapshot-HHMM`).
+`ledger schedule` is Windows-only for now. Use cron instead: run `crontab -e` and add a line like this
+(use the full path that `which ledger` prints, because cron doesn't use your shell's `PATH`):
 
-- If the machine is off or asleep at the scheduled time, that day's run is skipped.
-- Cron keeps no history, so the **Last run** column says `see log`.
-- Cron can't read the keystore, so give it your credentials. Run `crontab -e` and add these lines at the top
-  (only you and root can read them):
+```cron
+15 2 * * *  /home/you/.local/bin/ledger snapshot -o /var/lib/ledger --log
+```
 
-  ```cron
-  AZURE_TENANT_ID=...
-  AZURE_CLIENT_ID=...
-  AZURE_CLIENT_SECRET=...
-  ```
+Cron doesn't load your shell profile and can't read the keystore, so give it your credentials too. Either:
 
-- On macOS, cron can't write to Desktop, Documents or Downloads. Use another folder, or give `/usr/sbin/cron`
-  Full Disk Access in System Settings → Privacy & Security.
+- put `AZURE_TENANT_ID=...`, `AZURE_CLIENT_ID=...` and `AZURE_CLIENT_SECRET=...` lines at the top of
+  `crontab -e`, or
+- keep them in a file only you can read (`chmod 600 ~/.ledger.env`, with `export AZURE_...=...` lines)
+  and start the cron line with `. ~/.ledger.env &&`.
+
+On macOS, cron can't write to Desktop, Documents or Downloads. Use another folder, or give `/usr/sbin/cron`
+Full Disk Access in System Settings → Privacy & Security.
 
 ## Query your history
 

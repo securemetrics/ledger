@@ -10,7 +10,6 @@ import gzip
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -116,7 +115,6 @@ $tasks = @(Get-ScheduledTask -TaskPath '\Ledger\' -ErrorAction SilentlyContinue 
 ConvertTo-Json -InputObject $tasks -Compress
 """
 NEVER_RAN, RUNNING = 0x41303, 0x41301  # Task Scheduler's LastTaskResult codes
-CRON_TAG = " # ledger:"  # ends Ledger's crontab lines, so adding and removing leave everything else alone
 COLOR = bool(sys.stderr and sys.stderr.isatty()) and "NO_COLOR" not in os.environ  # stderr is None under pythonw
 
 
@@ -196,51 +194,18 @@ def table(headers, rows, file=None):
         print(fmt(row), file=file)
 
 
-def crontab():
-    """The user's crontab lines ([] if they have none yet), or None if it can't be read."""
-    try:
-        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-    except FileNotFoundError:  # no cron installed
-        return None
-    if result.returncode:
-        return [] if "no crontab" in result.stderr.lower() else None
-    return result.stdout.splitlines()
-
-
-def write_crontab(change):
-    """Replace the crontab with change(current lines). Exits rather than overwrite one it couldn't read."""
-    lines = crontab()
-    if lines is None:
-        sys.exit("couldn't read your crontab (is cron installed?), so nothing was changed")
-    result = subprocess.run(["crontab", "-"], input="".join(f"{line}\n" for line in change(lines)),
-                            capture_output=True, text=True)
-    if result.returncode:
-        sys.exit(f"couldn't update your crontab: {result.stderr.strip()}")
-
-
 def scheduled():
-    """Ledger's scheduled snapshots: tasks in Task Scheduler on Windows, tagged crontab lines elsewhere."""
-    if os.name == "nt":
-        result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_LIST],
-                                capture_output=True, text=True, encoding="utf-8")
-        return json.loads(result.stdout or "[]")
-    tasks = []
-    for line in crontab() or []:
-        match = re.fullmatch(rf"(\d+) (\d+) \* \* \* (.*){CRON_TAG}(\S+)", line)
-        if match:
-            # ponytail: cron keeps no run history, so the table says "see log" instead of a last-run result
-            now_ = datetime.datetime.now()
-            run = now_.replace(hour=int(match[2]), minute=int(match[1]), second=0, microsecond=0)
-            run += datetime.timedelta(days=run <= now_)
-            tasks.append({"name": match[4], "start": f"{run:%Y-%m-%dT%H:%M}", "args": match[3].replace("\\%", "%"),
-                          "logon": "cron", "state": "Ready", "result": None, "last": "",
-                          "next": f"{run:%Y-%m-%d %H:%M}"})
-    return tasks
+    """Ledger's tasks in Task Scheduler; none on other OSes, where `ledger schedule` isn't supported yet."""
+    if os.name != "nt":
+        return []
+    result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_LIST],
+                            capture_output=True, text=True, encoding="utf-8")
+    return json.loads(result.stdout or "[]")
 
 
 def task_folder(task):
-    match = re.search(r"""-o ("[^"]*"|'[^']*'|\S+)""", task["args"] or "")
-    return match.group(1).strip("\"'") if match else "?"
+    match = re.search(r'-o ("[^"]*"|\S+)', task["args"] or "")
+    return match.group(1).strip('"') if match else "?"
 
 
 def pick_folder():
@@ -297,9 +262,8 @@ def schedule_rows(tasks):
         rows.append([
             t["name"], t["start"][11:16], task_folder(t), fmt.group(1) if fmt else "json",
             datasets.group(1) if datasets else "all",
-            "always" if t["logon"] in ("Password", "cron") else "signed in", t["state"],
-            "never" if t["result"] == NEVER_RAN else f"{t['last']} {mark}" if t["last"] else "see log",
-            t["next"] or "-",
+            "always" if t["logon"] == "Password" else "signed in", t["state"],
+            "never" if t["result"] == NEVER_RAN else f"{t['last']} {mark}", t["next"] or "-",
         ])
     return rows
 
@@ -312,19 +276,19 @@ def unschedule(tasks):
         if pick.isdigit() and 1 <= int(pick) <= len(tasks):
             break
         print(f"  pick a number from 1 to {len(tasks)}", file=sys.stderr)
-    name = tasks[int(pick) - 1]["name"]
-    if os.name == "nt":
-        result = subprocess.run(["schtasks", "/Delete", "/TN", TASK_FOLDER + name, "/F"], capture_output=True, text=True)
-        if result.returncode:
-            sys.exit(f"couldn't remove {name}: {result.stderr.strip()}")
-    else:
-        write_crontab(lambda lines: [line for line in lines if not line.endswith(CRON_TAG + name)])
+    name = TASK_FOLDER + tasks[int(pick) - 1]["name"]
+    result = subprocess.run(["schtasks", "/Delete", "/TN", name, "/F"], capture_output=True, text=True)
+    if result.returncode:
+        sys.exit(f"couldn't remove {name}: {result.stderr.strip()}")
     print(f"  {paint('32', '✓')} removed {name}", file=sys.stderr)
     return 0
 
 
 def schedule(out, at, password, fmt, datasets):
     """Show Ledger's scheduled snapshots to add or remove one; any flag skips straight to adding."""
+    if os.name != "nt":  # ponytail: Windows only for now; cron support was removed until it's tested on real machines
+        sys.exit("`ledger schedule` is Windows-only for now. On Linux and macOS, schedule `ledger snapshot` "
+                 "with cron: see README, Run it daily")
     try:
         if (out, at, password, fmt, datasets) == (None,) * 5:
             tasks = scheduled()
@@ -336,9 +300,7 @@ def schedule(out, at, password, fmt, datasets):
                 print("  Scheduled snapshots\n", file=sys.stderr)
                 table(["#", "Name", "Time", "Folder", "Format", "Datasets", "Runs", "State", "Last run", "Next run"],
                       [[i, *row] for i, row in enumerate(schedule_rows(tasks), 1)])
-                if os.name == "nt":
-                    print(f"\n  Run one now: schtasks /Run /TN \"{TASK_FOLDER}<name>\"", file=sys.stderr)
-                print(file=sys.stderr)
+                print(f"\n  Run one now: schtasks /Run /TN \"{TASK_FOLDER}<name>\"\n", file=sys.stderr)
                 choice = ask("Add (a), remove (r) or quit (q)", "q").lower()
                 if choice.startswith("r"):
                     return unschedule(tasks)
@@ -362,7 +324,7 @@ def schedule(out, at, password, fmt, datasets):
                 datasets = dataset_list(ask("Which ones? Numbers or names, comma-separated", "all"))
             except argparse.ArgumentTypeError as e:
                 print(f"  {e}", file=sys.stderr)
-        if password is None and os.name == "nt":
+        if password is None:
             answer = ask("Also run while signed out? Needs your Windows password (y/n)", "y")
             password = not answer.lower().startswith("n")
     except (KeyboardInterrupt, EOFError):
@@ -372,17 +334,6 @@ def schedule(out, at, password, fmt, datasets):
     if datasets != list(DATASETS):  # no flag means all, so datasets added to Ledger later are picked up too
         cmd += ["--datasets", ",".join(datasets)]
     cmd.append("--log")
-    name = f"snapshot-{at.replace(':', '')}"  # one schedule per time: re-adding a time replaces it
-    if os.name != "nt":
-        # ponytail: cron skips runs missed while the machine was off; systemd timers / launchd if that matters
-        h, m = at.split(":")
-        line = f"{int(m)} {int(h)} * * * {shlex.join(cmd)}".replace("%", "\\%")  # cron reads a bare % as a newline
-        write_crontab(lambda lines: [old for old in lines if not old.endswith(CRON_TAG + name)] + [line + CRON_TAG + name])
-        print(f"  {paint('32', '✓')} scheduled {name} at {at} in your crontab. Log: {out / 'ledger.log'}\n\n"
-              f"  {paint('33', 'note:')} cron can't see this shell's environment and usually can't reach the keystore\n"
-              f"  either. Add AZURE_TENANT_ID=..., AZURE_CLIENT_ID=... and AZURE_CLIENT_SECRET=... lines at the top\n"
-              f"  of `crontab -e`.", file=sys.stderr)
-        return 0
     missing = [name for name in SETTINGS if not keystore(name)]
     if missing:
         print(f"  {paint('33', 'note:')} {', '.join(missing)} not in Credential Manager. Scheduled runs can't see "
@@ -399,7 +350,7 @@ def schedule(out, at, password, fmt, datasets):
     xml = TASK_XML.format(start=f"{datetime.date.today()}T{at}:00",
                           command=escape(str(pythonw if pythonw.exists() else sys.executable)),
                           arguments=escape(subprocess.list2cmdline(cmd[1:])))
-    name = TASK_FOLDER + name
+    name = f"{TASK_FOLDER}snapshot-{at.replace(':', '')}"  # one task per time: re-adding a time replaces it
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "ledger-task.xml"
         path.write_text(xml, encoding="utf-16")
@@ -613,7 +564,7 @@ def main(argv=None):
     q.add_argument("--columns", help="comma-separated column names, or 'all' (default: a useful few)")
     q.add_argument("--limit", type=int, default=50, help="rows to show, 0 for all (default: 50)")
     sub.add_parser("setup", help="save credentials to the OS keystore and test sign-in")
-    sched = sub.add_parser("schedule", parents=[common], help="run a snapshot every day")
+    sched = sub.add_parser("schedule", parents=[common], help="run a snapshot every day (Windows)")
     sched.add_argument("--at", type=hhmm, help="local time, HH:MM (prompts if omitted)")
     sched.add_argument("--format", choices=FORMATS, help="file format (prompts if omitted)")
     sched.add_argument("--datasets", type=dataset_list, metavar="NAMES",
