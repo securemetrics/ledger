@@ -132,40 +132,58 @@ ledger schedule    # list your schedules, add or remove one
   Add (a), remove (r) or quit (q) [q]:
 ```
 
-- **Last run**: ✓ means every dataset landed, `✗ see log` means at least one failed (details in `<folder>/ledger.log`).
-- **Runs**: `always` also runs while you're signed out; `signed in` only runs while you are (see below).
+- **Last run**: ✓ means every dataset was saved. `✗ see log` means at least one failed; the log is
+  `ledger.log` in the snapshot folder.
+- **Runs**: `always` runs even while you're signed out. `signed in` only runs while you're signed in.
 
-Adding asks for the time, folder, format, datasets and, on Windows, how it signs in. Flags answer the questions
-up front. This adds the first schedule above; because of `--password`, Windows then asks for your password once:
+### Skip the questions
+
+Adding a schedule asks a few questions. Give a flag to answer one up front:
+
+| Question | Flag |
+|---|---|
+| What time? | `--at 02:15` |
+| Which folder? | `-o C:\Ledger` |
+| Which format? | `--format json` |
+| Which datasets? | `--datasets all` |
+| Run while signed out? (Windows) | `--password` or `--no-password` |
+
+For example, this adds schedule 1 from the table above:
 
 ```powershell
 ledger schedule --at 02:15 -o C:\Ledger --format json --datasets all --password
 ```
 
-On Windows each schedule is a Task Scheduler task in the `\Ledger\` folder, named after its time; adding the same
-time again replaces it. It catches up if the PC was off or asleep at that time, and also runs on battery. How it
-signs in:
+Adding a schedule at a time that already has one replaces it.
 
-| Answer | Runs while signed out | Windows password |
-|---|---|---|
-| `--password` (default) | yes | asked once and stored by Windows; re-run `ledger schedule` after you change it |
-| `--no-password` | no; a missed run starts after you next sign in | not needed |
+### Windows
 
-On Linux and macOS, `ledger schedule` works the same way (table, add, remove) using your crontab. Ledger's lines
-end in `# ledger:snapshot-HHMM`, and it never touches your other lines. Differences from Windows:
+Schedules are tasks in Task Scheduler, under `\Ledger\`. If the PC is off or asleep at the scheduled time, the
+snapshot runs as soon as it's back. It also runs on battery.
 
-- Cron skips a run missed while the machine was off or asleep; the next one runs as usual.
-- Cron keeps no run history, so the table says `see log` instead of a last-run result.
-- Cron can't see your shell's environment and usually can't reach the keystore. Put the values at the top of
-  `crontab -e` (only you and root can read your crontab):
+Choose whether it runs while you're signed out:
+
+- **`--password`** (the default): runs even when you're signed out. Windows asks for your password once.
+  If you change your Windows password, add the schedule again.
+- **`--no-password`**: only runs while you're signed in. No password needed.
+
+### Linux and macOS
+
+Schedules are lines in your crontab. Ledger only changes its own lines (they end in `# ledger:snapshot-HHMM`).
+
+- If the machine is off or asleep at the scheduled time, that day's run is skipped.
+- Cron keeps no history, so the **Last run** column says `see log`.
+- Cron can't read the keystore, so give it your credentials. Run `crontab -e` and add these lines at the top
+  (only you and root can read them):
 
   ```cron
   AZURE_TENANT_ID=...
   AZURE_CLIENT_ID=...
   AZURE_CLIENT_SECRET=...
   ```
-- macOS: cron needs Full Disk Access to write into Desktop, Documents or Downloads. Pick another folder, or
-  allow `/usr/sbin/cron` under System Settings → Privacy & Security → Full Disk Access.
+
+- On macOS, cron can't write to Desktop, Documents or Downloads. Use another folder, or give `/usr/sbin/cron`
+  Full Disk Access in System Settings → Privacy & Security.
 
 ## Query your history
 
