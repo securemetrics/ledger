@@ -113,29 +113,43 @@ interrupted run never corrupts a previous snapshot. Regional endpoint? Set `LEDG
 ## Run it daily
 
 ```powershell
-ledger setup                                       # once, as the account the task will run as
-ledger schedule                                    # shows your schedules, offers to add one
-ledger schedule -o C:\Ledger\snapshots --at 02:15 --format json --datasets all --no-password   # no questions
+ledger setup       # once, as the account the schedule will run as
+ledger schedule    # list your schedules, add or remove one
 ```
 
+`ledger schedule` shows what's scheduled, then asks what to do:
+
 ```
-  #  Name           Time   Folder               Format  Datasets            Runs    State  Last run            Next run
-  ─  ─────────────  ─────  ───────────────────  ──────  ──────────────────  ──────  ─────  ──────────────────  ────────────────
-  1  snapshot-0215  02:15  C:\Ledger\snapshots  json    all                 always  Ready  2026-10-27 02:15 ✓  2026-10-28 02:15
-  2  snapshot-1800  18:00  C:\Ledger\daily      csv     machines,av_health  always  Ready  never               2026-10-27 18:00
+  Scheduled snapshots
+
+  #  Name           Time   Folder     Format  Datasets            Runs       State  Last run            Next run
+  ─  ─────────────  ─────  ─────────  ──────  ──────────────────  ─────────  ─────  ──────────────────  ────────────────
+  1  snapshot-0215  02:15  C:\Ledger  json    all                 always     Ready  2026-10-28 02:15 ✓  2026-10-29 02:15
+  2  snapshot-1800  18:00  D:\mde     csv     machines,av_health  signed in  Ready  never               2026-10-28 18:00
+
+  Run one now: schtasks /Run /TN "\Ledger\<name>"
+
+  Add (a), remove (r) or quit (q) [q]:
 ```
 
-On Windows each schedule is a Task Scheduler task in the `\Ledger\` folder, named after its time (adding the same
-time again replaces it). It catches up if the PC was off or asleep at that time, and also runs on battery. Output
-goes to `<out>/ledger.log`. Pick how it signs in:
+- **Last run**: ✓ means every dataset landed, `✗ see log` means at least one failed (details in `<folder>/ledger.log`).
+- **Runs**: `always` also runs while you're signed out; `signed in` only runs while you are (see below).
 
-| | Runs while signed out | Windows password |
+Adding asks for the time, folder, format, datasets and, on Windows, how it signs in. Flags answer the questions
+up front. This adds the first schedule above; because of `--password`, Windows then asks for your password once:
+
+```powershell
+ledger schedule --at 02:15 -o C:\Ledger --format json --datasets all --password
+```
+
+On Windows each schedule is a Task Scheduler task in the `\Ledger\` folder, named after its time; adding the same
+time again replaces it. It catches up if the PC was off or asleep at that time, and also runs on battery. How it
+signs in:
+
+| Answer | Runs while signed out | Windows password |
 |---|---|---|
-| `--password` (default answer) | yes | asked once, stored by Windows; re-run `ledger schedule` after a password change |
-| `--no-password` | no, a missed run starts after you next sign in | not needed, and no window pops up |
- Last Run Result `0` means every dataset landed; `1` means at least one failed.
-Run one now with `schtasks /Run /TN "\Ledger\snapshot-0215"`, remove it with
-`schtasks /Delete /TN "\Ledger\snapshot-0215" /F`.
+| `--password` (default) | yes | asked once and stored by Windows; re-run `ledger schedule` after you change it |
+| `--no-password` | no; a missed run starts after you next sign in | not needed |
 
 On Linux and macOS, `ledger schedule` works the same way (table, add, remove) using your crontab. Ledger's lines
 end in `# ledger:snapshot-HHMM`, and it never touches your other lines. Differences from Windows:
