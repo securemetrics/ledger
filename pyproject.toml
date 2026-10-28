@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "securemetrics-ledger"
+dynamic = ["version"]
+description = "Daily snapshots of Microsoft Defender for Endpoint inventory data"
+readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [{ name = "Securemetrics" }]
+requires-python = ">=3.9"
+dependencies = [
+    "keyring>=23",  # OS keystore
+    "pyarrow>=10",  # parquet output
+]
+
+[project.scripts]
+ledger = "ledger:main"
+
+[tool.setuptools]
+py-modules = ["ledger"]
+
+[tool.setuptools.dynamic]
+version = { attr = "ledger.__version__" }

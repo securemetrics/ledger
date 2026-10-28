@@ -1,0 +1,33 @@
+# Ledger output holds your tenant's device inventory: never commit it
+snapshots/
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+ledger.log
+*.tmp
+
+# tests stay local for now
+test_ledger.py
+
+# secrets
+.env
+.env.*
+
+# Python build and cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# editors and OS
+.vscode/
+.idea/
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
