@@ -161,7 +161,7 @@ Good to know:
 
 ### Linux and macOS
 
-`ledger schedule` isn't available yet, so use cron. Run `crontab -e` and add:
+`ledger schedule` works on Windows only, so use cron. Run `crontab -e` and add:
 
 ```cron
 AZURE_TENANT_ID=...

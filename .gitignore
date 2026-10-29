@@ -4,7 +4,6 @@ snapshots/
 ledger.log
 *.tmp
 
-# tests stay local for now
 test_ledger.py
 
 # secrets

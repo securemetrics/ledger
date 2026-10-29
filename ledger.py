@@ -41,7 +41,6 @@ DATASETS = {
     "software": "/api/Software",  # Software.Read.All
     "software_by_machine": "/api/machines/SoftwareInventoryByMachine",  # Software.Read.All
     # one row per device x software x CVE, with CVSS, exploitability and first/last seen
-    # ponytail: JSON export pages; Microsoft suggests the file export (SoftwareVulnerabilitiesExport) above ~100k devices
     "vulnerabilities": "/api/machines/SoftwareVulnerabilitiesByMachine",  # Vulnerability.Read.All
     "recommendations": "/api/recommendations",  # SecurityRecommendation.Read.All
     "exposure_score": "/api/exposureScore",  # Score.Read.All
@@ -195,7 +194,7 @@ def table(headers, rows, file=None):
 
 
 def scheduled():
-    """Ledger's tasks in Task Scheduler; none on other OSes, where `ledger schedule` isn't supported yet."""
+    """Ledger's tasks in Task Scheduler (Windows only)."""
     if os.name != "nt":
         return []
     result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_LIST],
@@ -286,8 +285,8 @@ def unschedule(tasks):
 
 def schedule(out, at, password, fmt, datasets):
     """Show Ledger's scheduled snapshots to add or remove one; any flag skips straight to adding."""
-    if os.name != "nt":  # ponytail: Windows only for now; cron support was removed until it's tested on real machines
-        sys.exit("`ledger schedule` is Windows-only for now. On Linux and macOS, schedule `ledger snapshot` "
+    if os.name != "nt":
+        sys.exit("`ledger schedule` works on Windows only. On Linux and macOS, schedule `ledger snapshot` "
                  "with cron: see README, Run it daily")
     try:
         if (out, at, password, fmt, datasets) == (None,) * 5:
@@ -331,7 +330,7 @@ def schedule(out, at, password, fmt, datasets):
         sys.exit("\ncancelled")
     out = Path(out).resolve()  # scheduled runs start in another working directory
     cmd = [sys.executable, str(Path(__file__).resolve()), "snapshot", "-o", str(out), "--format", fmt]
-    if datasets != list(DATASETS):  # no flag means all, so datasets added to Ledger later are picked up too
+    if datasets != list(DATASETS):  # without the flag, a run saves every dataset
         cmd += ["--datasets", ",".join(datasets)]
     cmd.append("--log")
     missing = [name for name in SETTINGS if not keystore(name)]
@@ -364,7 +363,6 @@ def schedule(out, at, password, fmt, datasets):
 
 
 def token(env):
-    # ponytail: one token per run (~60-90 min life); refresh on 401 if a huge tenant outlives it
     form = {"grant_type": "client_credentials", "client_id": env["AZURE_CLIENT_ID"],
             "client_secret": env["AZURE_CLIENT_SECRET"], "scope": SCOPE}
     try:
@@ -390,7 +388,6 @@ def get(url, tok):
 
 
 def fetch(path, tok):
-    # ponytail: whole dataset in memory; stream pages to disk if tenants get huge
     url, rows = API + path, []
     while url:
         page = get(url, tok)
@@ -505,7 +502,6 @@ def text(value):
 
 def query(out, dataset, date, where, columns, limit):
     """Print one dataset from a snapshot (the latest unless `date`) as a table."""
-    # ponytail: filter + pick columns only; DuckDB (see README) covers sorting, grouping and joins
     files = [f for ext in FORMATS.values() for f in Path(out).glob(f"{date or '*'}/{dataset}{ext}")]
     if not files:
         sys.exit(f"no {dataset} snapshot{f' for {date}' if date else ''} in {Path(out).resolve()}")
@@ -583,7 +579,7 @@ def main(argv=None):
         sys.stderr, COLOR = open(Path(args.out) / "ledger.log", "a", encoding="utf-8"), False
         print(f"\n--- {now():%Y-%m-%d %H:%M:%S} UTC", file=sys.stderr)
     if sys.stdout and not sys.stdout.isatty():
-        sys.stdout.reconfigure(encoding="utf-8")  # redirected output on Windows is cp1252 and chokes on "─" or names
+        sys.stdout.reconfigure(encoding="utf-8")  # redirected output on Windows defaults to cp1252, which can't encode "─" or some names
     if sys.stderr and sys.stderr.isatty():
         banner()
     if args.cmd in ("snapshot", "list", "query") and args.out is None:
